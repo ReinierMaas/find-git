@@ -1,5 +1,5 @@
 [package]
-name = "find-git"
+name = "forgit"
 version = "0.1.0"
 authors = ["Reinier Maas <reinier.maas@channable.com>"]
 edition = "2018"
