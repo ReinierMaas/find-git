@@ -1,32 +1,19 @@
 use std::env;
-use std::path::Path;
+use std::path::PathBuf;
 use std::{io,io::{Error, ErrorKind}};
-use std::process::Command;
 use walkdir::{DirEntry, WalkDir};
+use git2::{Repository, Status, BranchType};
+
+// Get git status
+fn git_status() -> Status {
+    let mut cmp_status = Status::all();
+    cmp_status.remove(Status::IGNORED);
+    cmp_status
+}
 
 // Error conversion
-fn from_utf8_error(e: std::string::FromUtf8Error) -> Error {
+fn from_git_error(e: git2::Error) -> Error {
     Error::new(ErrorKind::Other, e)
-}
-
-// Commands
-fn git() -> Command {
-    Command::new("git")
-}
-
-fn exists_git_cmd() -> io::Result<()> {
-    git().arg("--version").output().map(|_| ())
-}
-
-fn git_status<P: AsRef<Path>>(dir: P) -> io::Result<String> {
-    git()
-        .current_dir(dir)
-        .arg("status")
-        .output()
-        .and_then(|o| {
-            String::from_utf8(o.stdout)
-                   .map_err(from_utf8_error)
-        })
 }
 
 // DirEntry is a '.git' folder
@@ -38,15 +25,65 @@ fn is_git(entry: &DirEntry) -> bool {
 }
 
 fn main() -> io::Result<()> {
-    exists_git_cmd()?;
+    let cmp_status = git_status();
     let current_dir = env::current_dir()?;
     let walker = WalkDir::new(current_dir).into_iter();
+    let mut repos : Vec<PathBuf> = vec![];
+
+    println!("Found repositories:");
     for entry in walker.filter_map(|e| e.ok()) {
         if let Some(parent) = entry.path().parent() {
             if is_git(&entry) {
-                println!("{}", parent.display());
-                println!("{}", git_status(parent)?);
+                println!("    {}", parent.display());
+                repos.push(parent.to_owned());
             }
+        }
+    }
+
+    println!("Repositories with uncommitted changes:");
+    for parent in &repos {
+        let repo = Repository::open(&parent).map_err(from_git_error)?;
+        let statuses = repo.statuses(None).map_err(from_git_error)?;
+        if statuses
+            .iter()
+            .any(|status| status.status().intersects(cmp_status)) {
+            println!("    {}", parent.display());
+        }
+    }
+
+    println!("Repositories with stashed changes:");
+    for parent in &repos {
+        let mut repo = Repository::open(&parent).map_err(from_git_error)?;
+        let mut stashes = vec![];
+        repo.stash_foreach(|_, stash, _| {
+            stashes.push(stash.to_owned());
+            false // continue? print all the stashes?
+        }).map_err(from_git_error)?;
+        if !stashes.is_empty() { println!("    {}", parent.display()) }
+        for stash in stashes {
+            println!("        {}", stash);
+        }
+    }
+
+    println!("Repositories with unpushed branches:");
+    for parent in &repos {
+        let repo = Repository::open(&parent).map_err(from_git_error)?;
+        let branches = repo.branches(Some(BranchType::Local)).map_err(from_git_error)?;
+        let diff_branches: Vec<String> = branches
+            .filter_map(|r|r.ok())
+            .filter(|(branch,_)| {
+                if let Ok(upstream) = branch.upstream() {
+                    let upstream = upstream.get().peel_to_tree().map_err(from_git_error).unwrap();
+                    let branch = branch.get().peel_to_tree().map_err(from_git_error).unwrap();
+                    let diff = repo.diff_tree_to_tree(Some(&upstream), Some(&branch), None).map_err(from_git_error).unwrap();
+                    diff.deltas().any(|_| true)
+                } else {
+                    true
+                }})
+            .map(|(branch,_)| branch.name().map_err(from_git_error).unwrap().unwrap_or("").to_owned()).collect();
+        if !diff_branches.is_empty() { println!("    {}", parent.display()) }
+        for branch in diff_branches {
+            println!("        {}", branch);
         }
     }
     Ok(())
