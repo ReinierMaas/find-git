@@ -48,7 +48,7 @@ fn main() -> io::Result<()> {
 
     println!("{}", "Repositories with uncommitted changes:".bold().blue());
     for parent in &repos {
-        let repo = Repository::open(&parent).map_err(from_git_error)?;
+        let repo = Repository::open(parent).map_err(from_git_error)?;
         let statuses = repo.statuses(None).map_err(from_git_error)?;
         if statuses
             .iter()
@@ -67,7 +67,7 @@ fn main() -> io::Result<()> {
 
     println!("{}", "Repositories with stashed changes:".bold().blue());
     for parent in &repos {
-        let mut repo = Repository::open(&parent).map_err(from_git_error)?;
+        let mut repo = Repository::open(parent).map_err(from_git_error)?;
         let mut stashes = vec![];
         repo.stash_foreach(|_, stash, _| {
             stashes.push(stash.to_owned());
@@ -85,7 +85,7 @@ fn main() -> io::Result<()> {
 
     println!("{}", "Repositories with unpushed branches:".bold().blue());
     for parent in &repos {
-        let repo = Repository::open(&parent).map_err(from_git_error)?;
+        let repo = Repository::open(parent).map_err(from_git_error)?;
         let branches = repo
             .branches(Some(BranchType::Local))
             .map_err(from_git_error)?;
