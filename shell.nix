@@ -1,16 +1,22 @@
 let
   sources = import ./nix/sources.nix;
-  mozilla = import (sources.nixpkgs-mozilla + "/rust-overlay.nix");
+  rust-overlay = import sources.rust-overlay;
   nixpkgs = import sources.nixpkgs {
-    overlays = [mozilla];
+    overlays = [rust-overlay];
   };
-  channel = nixpkgs.rustChannelOf { rustToolchain = ./rust-toolchain; };
+  rust-toolchain-version = (nixpkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain).override {
+    extensions = [ "rust-analyzer" "rust-src" ];
+  };
 in
   nixpkgs.mkShell {
     name = "auto-dev";
     nativeBuildInputs = with nixpkgs; [
+      # Required for openssl-sys crate
+      openssl
+      pkg-config
+
       # Rust core
-      channel.rust
+      rust-toolchain-version
       # Neat helper tools
       cargo-audit
       cargo-edit
@@ -23,7 +29,4 @@ in
 
     # Always enable rust backtraces in development shell
     RUST_BACKTRACE = "1";
-
-    # Provide sources for rust-analyzer, because nixpkgs rustc doesn't include them in the sysroot
-    RUST_SRC_PATH = "${channel.rust-src}/lib/rustlib/src/rust/library";
   }
